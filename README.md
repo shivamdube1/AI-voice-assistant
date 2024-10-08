@@ -22,13 +22,24 @@ Reminders: Users can set reminders, which can be expanded into more complex sche
 General Knowledge: The assistant can provide brief summaries of topics using Wikipedia, enhancing user knowledge on various subjects.
 
 Technologies Used
+
 Python: The primary programming language used for the application.
+
 Speech Recognition: For converting speech into text commands.
+
 Text-to-Speech (TTS): To convert responses into spoken audio.
+
 Web APIs: To fetch information such as weather data and Wikipedia summaries.
+
 Regular Expressions: For command parsing and processing user input.
+
 Future Enhancements
+
 User Customization: Allow users to customize voice options and assistant behavior.
+
 Calendar Integration: Enable scheduling and calendar management features for reminders.
+
 Error Handling and Logging: Implement robust error handling and logging for better user experience and debugging.
+
 Extended Functionality: Integrate additional APIs for news updates, messaging, and more complex queries.
+
