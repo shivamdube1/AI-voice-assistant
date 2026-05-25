@@ -1,0 +1,7 @@
+langgraph
+langchain-openai
+langchain-core
+tavily-python
+requests
+beautifulsoup4
+python-dotenv
