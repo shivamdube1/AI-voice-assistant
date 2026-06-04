@@ -1,0 +1,168 @@
+import os
+import sys
+import requests
+from bs4 import BeautifulSoup
+from typing import TypedDict, List
+from langgraph.graph import StateGraph, START, END
+
+class AgentState(TypedDict):
+    company_name: str
+    urls_to_scrape: List[str]
+    scraped_data: str
+    final_report: str
+
+def search_discovery(state: AgentState) -> dict:
+    company_name = state["company_name"]
+    tavily_api_key = os.environ.get("TAVILY_API_KEY")
+    if not tavily_api_key:
+        raise ValueError("TAVILY_API_KEY not found in environment.")
+
+    # Identify search queries needed
+    queries = [
+        f"{company_name} official website",
+        f"{company_name} LinkedIn company profile",
+        f"{company_name} recent financial business news"
+    ]
+
+    urls = []
+
+    for query in queries:
+        try:
+            response = requests.post(
+                "https://api.tavily.com/search",
+                json={
+                    "api_key": tavily_api_key,
+                    "query": query,
+                    "search_depth": "basic",
+                    "max_results": 2
+                },
+                headers={"Content-Type": "application/json"},
+                timeout=10
+            )
+            response.raise_for_status()
+            results = response.json().get("results", [])
+            for res in results:
+                url = res.get("url")
+                if url and url not in urls:
+                    urls.append(url)
+        except Exception as e:
+            pass # ignore errors and proceed
+
+    return {"urls_to_scrape": urls}
+
+def deep_scraper(state: AgentState) -> dict:
+    urls = state.get("urls_to_scrape", [])
+    scraped_texts = []
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
+
+    for url in urls:
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, "html.parser")
+                text = soup.get_text(separator=' ', strip=True)
+                # Keep up to 5000 chars per URL to avoid exceeding context
+                scraped_texts.append(f"URL: {url}\nContent: {text[:5000]}")
+        except Exception as e:
+            pass
+
+    scraped_data = "\n\n".join(scraped_texts)
+    return {"scraped_data": scraped_data}
+
+def data_extraction_synthesis(state: AgentState) -> dict:
+    company_name = state["company_name"]
+    scraped_data = state.get("scraped_data", "")
+
+    openai_api_key = os.environ.get("OPENAI_API_KEY")
+    if not openai_api_key:
+        raise ValueError("OPENAI_API_KEY not found in environment.")
+
+    system_prompt = """You are an elite Corporate Intelligence Researcher. Your mission is to investigate a target company provided by the user, scrape relevant web data, and produce a highly structured, data-driven intelligence report.
+
+Your Execution Loop:
+Plan: Identify the search queries needed to find the company's official site, corporate profiles (like LinkedIn or Crunchbase), and recent financial press.
+Search & Scrape: Deploy your tools to extract raw text from these URLs. Look specifically for quantitative data.
+Synthesize: Cross-reference the data, discard marketing fluff, and extract hard facts.
+
+Required Report Structure:
+Executive Summary: A concise, one-paragraph overview of the company.
+
+Company Profile:
+Specialization: What is their exact niche, core technology, or primary service?
+Company Size: Number of employees (provide an exact number or estimated range based on scraped data).
+Headquarters / Key Locations: Primary operational bases.
+
+Company Performance:
+Financials / Growth: Estimated revenue, funding rounds, market share, or notable growth metrics.
+Market Position: Who are their primary competitors?
+Core Products & Offerings: The specific products or services they sell and their target demographic.
+Recent Developments: Key news, leadership changes, or major events from the last 6-12 months.
+
+Constraints: Ground your entire report strictly in the data you scrape. If a specific metric (like revenue or exact employee count) cannot be found, explicitly state 'Insufficient data found for this metric' rather than guessing."""
+
+    user_prompt = f"Target Company: {company_name}\n\nScraped Data:\n{scraped_data}\n\nPlease generate the corporate intelligence report based ONLY on the scraped data provided."
+
+    response = requests.post(
+        "https://api.openai.com/v1/chat/completions",
+        json={
+            "model": "gpt-4o-mini",
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            "temperature": 0.2
+        },
+        headers={
+            "Authorization": f"Bearer {openai_api_key}",
+            "Content-Type": "application/json"
+        },
+        timeout=60
+    )
+    response.raise_for_status()
+    result = response.json()
+    report = result["choices"][0]["message"]["content"]
+
+    return {"final_report": report}
+
+def compile_graph():
+    workflow = StateGraph(AgentState)
+
+    workflow.add_node("search_discovery", search_discovery)
+    workflow.add_node("deep_scraper", deep_scraper)
+    workflow.add_node("data_extraction_synthesis", data_extraction_synthesis)
+
+    workflow.add_edge(START, "search_discovery")
+    workflow.add_edge("search_discovery", "deep_scraper")
+    workflow.add_edge("deep_scraper", "data_extraction_synthesis")
+    workflow.add_edge("data_extraction_synthesis", END)
+
+    return workflow.compile()
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: python corporate_intelligence_agent.py \"[Company Name]\"")
+        sys.exit(1)
+
+    company_name = sys.argv[1]
+
+    app = compile_graph()
+
+    initial_state = {
+        "company_name": company_name,
+        "urls_to_scrape": [],
+        "scraped_data": "",
+        "final_report": ""
+    }
+
+    print(f"Starting research for: {company_name}...\n")
+    final_state = app.invoke(initial_state)
+
+    print("\n" + "="*50 + "\n")
+    print(final_state.get("final_report", "No report generated."))
+    print("\n" + "="*50 + "\n")
+
+if __name__ == "__main__":
+    main()
