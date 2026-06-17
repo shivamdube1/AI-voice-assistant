@@ -1,0 +1,4 @@
+langgraph
+langchain
+requests
+beautifulsoup4
