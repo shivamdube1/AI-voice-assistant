@@ -1,0 +1,4 @@
+langgraph
+requests
+beautifulsoup4
+typing_extensions
